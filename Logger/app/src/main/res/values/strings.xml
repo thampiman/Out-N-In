@@ -18,6 +18,10 @@
     <string name="start_logging">Start Logging</string>
     <string name="stop_logging">Stop Logging</string>
     <string name="location">Location</string>
+    <string name="enable_gps_alert_title">Enable GPS</string>
+    <string name="enable_gps_alert">Please enable GPS before you start logging. Would you like to do that now?</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
     <string-array name="location_array">
         <item>Outdoor</item>
         <item>Indoor</item>

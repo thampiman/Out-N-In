@@ -1,10 +1,11 @@
 package com.outnin.logger.app;
 
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.location.Location;
-import android.location.LocationListener;
 import android.location.LocationManager;
 import android.provider.Settings;
 import android.support.v7.app.ActionBarActivity;
@@ -19,9 +20,19 @@ import android.widget.ArrayAdapter;
 import android.widget.Spinner;
 import android.widget.TextView;
 
-public class MainActivity extends ActionBarActivity implements LocationListener {
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesClient;
+import com.google.android.gms.location.LocationClient;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationListener;
 
-    private LocationManager locationManager;
+public class MainActivity extends ActionBarActivity implements LocationListener,
+        GooglePlayServicesClient.ConnectionCallbacks,
+        GooglePlayServicesClient.OnConnectionFailedListener {
+
+    private LocationManager mLocationManager;
+    private LocationClient mLocationClient;
+    private LocationRequest mLocationRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -29,14 +40,34 @@ public class MainActivity extends ActionBarActivity implements LocationListener 
         setContentView(R.layout.activity_main);
 
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000,0,this);
 
-        boolean enabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+        // Create the LocationRequest object
+        mLocationClient = new LocationClient(this, this, this);
 
+        mLocationRequest = LocationRequest.create();
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        mLocationRequest.setInterval(1000);
+        mLocationRequest.setFastestInterval(500);
+
+        mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        boolean enabled = mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
         if (!enabled) {
-            Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
-            startActivity(intent);
+            new AlertDialog.Builder(this)
+                .setTitle(getResources().getString(R.string.enable_gps_alert_title))
+                .setMessage(getResources().getString(R.string.enable_gps_alert))
+                .setPositiveButton(getResources().getString(R.string.yes), new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        // Redirect user to enable GPS in Android Settings
+                        Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+                        startActivity(intent);
+                    }
+                })
+                .setNegativeButton(getResources().getString(R.string.no), new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        // do nothing
+                    }
+                })
+                .show();
         }
 
         // add PhoneStateListener
@@ -57,10 +88,16 @@ public class MainActivity extends ActionBarActivity implements LocationListener 
 
         // GPS Provider
         TextView gpsProvider = (TextView) findViewById(R.id.gpsProvider);
-        if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+        if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
             gpsProvider.setText(getResources().getString(R.string.gps_provider_enabled));
         } else {
             gpsProvider.setText(getResources().getString(R.string.gps_provider_disabled));
+        }
+
+        // Update GPS Coordinates and Accuracy with Last Known Location
+        Location location = mLocationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+        if (location != null) {
+            updateViewWithLocation(location);
         }
     }
 
@@ -77,39 +114,11 @@ public class MainActivity extends ActionBarActivity implements LocationListener 
     }
 
     @Override
-    public void onProviderEnabled(String provider) {
-        if (provider.equals(LocationManager.GPS_PROVIDER)) {
-            TextView gpsProvider = (TextView) findViewById(R.id.gpsProvider);
-            gpsProvider.setText(getResources().getString(R.string.gps_provider_enabled));
-        }
-    }
-
-    @Override
-    public void onProviderDisabled(String provider) {
-        if (provider.equals(LocationManager.GPS_PROVIDER)) {
-            TextView gpsProvider = (TextView) findViewById(R.id.gpsProvider);
-            gpsProvider.setText(getResources().getString(R.string.gps_provider_disabled));
-        }
-    }
-
-    @Override
-    public void onStatusChanged(String provider, int status, Bundle extras) {
-        /*if (provider.equals(LocationManager.GPS_PROVIDER)) {
-            TextView gpsStatus = (TextView) findViewById(R.id.gpsStatus);
-            if (status == LocationProvider.AVAILABLE) {
-                gpsStatus.setText(getResources().getString(R.string.gps_status_available));
-            } else if (status == LocationProvider.OUT_OF_SERVICE) {
-                gpsStatus.setText(getResources().getString(R.string.gps_status_out_of_service));
-            } else if (status == LocationProvider.TEMPORARILY_UNAVAILABLE) {
-                gpsStatus.setText(getResources().getString(R.string.gps_status_temporarily_unavailable));
-            } else {
-                gpsStatus.setText(getResources().getString(R.string.unknown));
-            }
-        }*/
-    }
-
-    @Override
     public void onLocationChanged(Location location) {
+        updateViewWithLocation(location);
+    }
+
+    private void updateViewWithLocation(Location location) {
         float accuracy = location.getAccuracy();
         double lat = location.getLatitude();
         double lon = location.getLongitude();
@@ -137,5 +146,55 @@ public class MainActivity extends ActionBarActivity implements LocationListener 
         public void onServiceStateChanged(ServiceState serviceState) {
             super.onServiceStateChanged(serviceState);
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // Connect the client.
+        mLocationClient.connect();
+    }
+
+    @Override
+    protected void onResume() {
+        if (!mLocationClient.isConnected()) {
+            mLocationClient.connect();
+        }
+        super.onResume();
+    }
+
+    @Override
+    protected void onStop() {
+        // If the client is connected
+        if (mLocationClient.isConnected()) {
+            // remove location updates
+            mLocationClient.removeLocationUpdates(this);
+        }
+        mLocationClient.disconnect();
+        super.onStop();
+    }
+
+    @Override
+    public void onConnected(Bundle dataBundle) {
+        mLocationClient.requestLocationUpdates(mLocationRequest, this);
+    }
+
+    @Override
+    public void onDisconnected() {
+
+    }
+
+    @Override
+    public void onConnectionFailed(ConnectionResult connectionResult) {
+        TextView gpsCoordinates = (TextView) findViewById(R.id.gpsCoordinates);
+        gpsCoordinates.setText(getResources().getString(R.string.unknown));
+
+        TextView gpsAccuracy = (TextView) findViewById(R.id.gpsAccuracy);
+        gpsAccuracy.setText(getResources().getString(R.string.unknown));
     }
 }
